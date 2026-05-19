@@ -1,0 +1,43 @@
+{% extends 'layout.html' %}
+{% block title %}Aduan & Masukan Toko{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        
+        <!-- POP UP NOTIFIKASI SUKSES -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm mb-4" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-danger text-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="fas fa-comment-alt me-2"></i>Form Aduan, Kritik & Saran</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-secondary small mb-4">
+                    Mengalami kendala teknis aplikasi, barang rusak, atau ada masukan dari pelanggan? Tuliskan di bawah ini. Laporan Anda akan dikirimkan secara langsung ke Telegram Owner untuk segera ditindaklanjuti.
+                </p>
+                
+                <form action="{{ url_for('feedback') }}" method="POST">
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-secondary">Isi Laporan / Keluhan</label>
+                        <textarea name="isi_feedback" class="form-control" rows="6" placeholder="Ketik aduan Anda disini dengan jelas (misal: Printer struk macet, AC kasir mati, atau masukan dari pelanggan Pakde Noto terkait diskon...)" required></textarea>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-danger btn-lg fw-bold"><i class="fas fa-paper-plane me-2"></i>Kirim Laporan Sekarang</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

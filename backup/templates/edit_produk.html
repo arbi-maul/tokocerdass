@@ -1,0 +1,84 @@
+{% extends 'layout.html' %}
+
+{% block title %}Edit Produk{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-warning text-dark">
+                <h4 class="mb-0">Edit Produk: {{ product.name }}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('edit_produk', id=product.id) }}">
+                    
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold">Nama Produk</label>
+                            <input type="text" class="form-control" name="name" value="{{ product.name }}" required>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Kategori</label>
+                            <select class="form-select" name="category">
+                                <option value="Kaos" {% if product.category == 'Kaos' %}selected{% endif %}>Kaos</option>
+                                <option value="Kemeja" {% if product.category == 'Kemeja' %}selected{% endif %}>Kemeja</option>
+                                <option value="Celana Panjang" {% if product.category == 'Celana Panjang' %}selected{% endif %}>Celana Panjang</option>
+                                <option value="Celana Pendek" {% if product.category == 'Celana Pendek' %}selected{% endif %}>Celana Pendek</option>
+                                <option value="Jaket" {% if product.category == 'Jaket' %}selected{% endif %}>Jaket/Hoodie</option>
+                                <option value="Aksesoris" {% if product.category == 'Aksesoris' %}selected{% endif %}>Aksesoris</option>
+                                <option value="Lainnya" {% if product.category == 'Lainnya' %}selected{% endif %}>Lainnya</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Stok Saat Ini</label>
+                            <input type="number" class="form-control" name="stock" value="{{ product.stock }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Harga Modal (Rp)</label>
+                            <input type="number" class="form-control" name="modal" value="{{ product.modal }}" required>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Harga Eceran</label>
+                            <input type="number" class="form-control" name="retail_price" value="{{ product.retail_price }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Harga Grosir</label>
+                            <input type="number" class="form-control" name="wholesale_price" value="{{ product.wholesale_price }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Min. Qty Grosir</label>
+                            <input type="number" class="form-control" name="min_wholesale_quantity" value="{{ product.min_wholesale_quantity }}" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Tipe Penjualan</label>
+                            <select class="form-select" name="sale_type">
+                                <option value="all" {% if product.sale_type == 'all' %}selected{% endif %}>Semua (Eceran & Grosir)</option>
+                                <option value="eceran_only" {% if product.sale_type == 'eceran_only' %}selected{% endif %}>Hanya Eceran/Grosir</option>
+                                <option value="lusinan_only" {% if product.sale_type == 'lusinan_only' %}selected{% endif %}>Hanya Lusinan (Pack)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-success">Harga Per Lusin</label>
+                            <input type="number" class="form-control" name="dozen_price" value="{{ product.dozen_price }}" placeholder="0">
+                        </div>
+
+                        <div class="col-12 mt-3">
+                            <label class="form-label">Barcode (Opsional)</label>
+                            <input type="text" class="form-control" name="barcode" value="{{ product.barcode or '' }}">
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="submit" class="btn btn-success">Simpan Perubahan</button>
+                        <a href="{{ url_for('produk') }}" class="btn btn-secondary">Batal</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

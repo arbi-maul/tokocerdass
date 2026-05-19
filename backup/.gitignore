@@ -1,0 +1,17 @@
+# Database file
+kios_pintar.db
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+.venv/
+env/
+.env
+
+# File sistem operasi
+.DS_Store
+Thumbs.db

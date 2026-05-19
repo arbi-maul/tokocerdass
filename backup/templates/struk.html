@@ -1,0 +1,71 @@
+{% extends 'layout.html' %}
+{% block title %}Struk Belanja{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h3 class="text-center fw-bold">Struk Belanja</h3>
+                <p class="text-center mb-0">Arbi Collection</p>
+                <p class="text-center small mb-2">{{ now().strftime('%d-%m-%Y %H:%M:%S') }}</p>
+                
+                <!-- TAMPILAN NAMA PELANGGAN KHUSUS DI STRUK -->
+                <div class="text-center small border-bottom pb-2 mb-3 text-muted">
+                    Pelanggan: <strong class="text-dark">{{ pelanggan_nama }}</strong>
+                </div>
+
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-end">Harga</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in cart %}
+                        <tr>
+                            <td>{{ item.name }}</td>
+                            <td class="text-center">{{ item.quantity }}</td>
+                            <td class="text-end">Rp{{ "%.0f"|format(item.price) }}</td>
+                            <td class="text-end">Rp{{ "%.0f"|format(item.subtotal) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-top">
+                            <th colspan="3" class="text-end">Subtotal</th>
+                            <th class="text-end">Rp{{ "%.0f"|format(total) }}</th>
+                        </tr>
+                        {% if potongan > 0 %}
+                        <tr>
+                            <th colspan="3" class="text-end border-0">Potongan</th>
+                            <th class="text-end border-0">- Rp{{ "%.0f"|format(potongan) }}</th>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <th colspan="3" class="text-end border-0 fw-bold">TOTAL AKHIR</th>
+                            <th class="text-end border-0 fw-bold">Rp{{ "%.0f"|format(total_akhir) }}</th>
+                        </tr>
+                        <tr>
+                            <th colspan="3" class="text-end border-0">BAYAR</th>
+                            <th class="text-end border-0">Rp{{ "%.0f"|format(uang_bayar) }}</th>
+                        </tr>
+                        <tr>
+                            <th colspan="3" class="text-end border-0">KEMBALI</th>
+                            <th class="text-end border-0">Rp{{ "%.0f"|format(kembalian) }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+                <hr>
+                <p class="text-center">Terima kasih telah berbelanja!</p>
+            </div>
+        </div>
+        <div class="text-center mt-3 no-print">
+            <a href="{{ url_for('kasir') }}" class="btn btn-primary">Transaksi Baru</a>
+            <button onclick="window.print()" class="btn btn-secondary">Cetak (Printer)</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

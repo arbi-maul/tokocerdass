@@ -1,0 +1,138 @@
+{% extends 'layout.html' %}
+{% block title %}Data Toko{% endblock %}
+{% block content %}
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Catat Biaya Operasional</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="tambah_biaya" value="1">
+                    <div class="mb-2">
+                        <label>Nama Biaya</label>
+                        <input type="text" class="form-control" name="nama_biaya" placeholder="Contoh: Listrik, Gaji Karyawan" required>
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col">
+                            <label>Kategori</label>
+                            <select class="form-select" name="kategori">
+                                <option value="Tetap">Biaya Tetap (Sewa/Gaji)</option>
+                                <option value="Variabel">Biaya Variabel (Listrik/Makan)</option>
+                                <option value="Lainnya">Lainnya</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label>Jumlah (Rp)</label>
+                            <input type="number" class="form-control" name="jumlah" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label>Tanggal</label>
+                        <input type="date" class="form-control" name="tanggal" value="{{ now().strftime('%Y-%m-%d') }}" required>
+                    </div>
+                    <button type="submit" class="btn btn-danger w-100 fw-bold">Simpan Pengeluaran</button>
+                </form>
+
+                <hr>
+                <h6 class="fw-bold">Riwayat Pengeluaran (Terbaru)</h6>
+                <ul class="list-group list-group-flush" style="max-height: 250px; overflow-y: auto;">
+                    {% for biaya in biaya_ops %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <div>
+                            <strong>{{ biaya.nama_biaya }}</strong> <span class="badge bg-secondary">{{ biaya.kategori }}</span><br>
+                            <small class="text-muted">{{ biaya.tanggal }}</small>
+                        </div>
+                        <div class="text-end">
+                            <span class="text-danger fw-bold">- {{ biaya.jumlah|rupiah }}</span><br>
+                            <a href="{{ url_for('hapus_biaya', id=biaya.id) }}" class="text-danger small text-decoration-none" onclick="return confirm('Yakin ingin menghapus biaya ini?')"><i class="fas fa-trash"></i> Hapus</a>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-boxes me-2"></i>Restok Barang Massal (Kulakan)</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success pb-0 mb-3">
+                    <p><small>Klik <strong>+ Tambah Baris</strong> untuk menginput nota supplier. Stok akan bertambah & modal baru otomatis dihitung.</small></p>
+                </div>
+                
+                <form method="post" action="{{ url_for('data_toko') }}">
+                    <input type="hidden" name="restok_barang" value="1">
+                    
+                    <div id="restok-container">
+                        <div class="row mb-2 restok-row align-items-center">
+                            <div class="col-md-5 mb-1 pe-1">
+                                <label class="form-label mb-0 small fw-bold">Nama Barang</label>
+                                <select class="form-select form-select-sm" name="product_id[]" required>
+                                    <option value="">-- Pilih Barang --</option>
+                                    {% for p in products %}
+                                        <option value="{{ p.id }}">{{ p.name }} (Stok: {{ p.stock }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2 mb-1 px-1">
+                                <label class="form-label mb-0 small fw-bold">Qty (Pcs)</label>
+                                <input type="number" class="form-control form-control-sm" name="qty_masuk[]" min="1" required>
+                            </div>
+                            <div class="col-md-4 mb-1 px-1">
+                                <label class="form-label mb-0 small fw-bold">Total Uang (Rp)</label>
+                                <input type="number" class="form-control form-control-sm" name="total_biaya[]" min="0" required>
+                            </div>
+                            <div class="col-md-1 mb-1 ps-1 text-center" style="padding-top: 18px;">
+                                </div>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn btn-outline-primary btn-sm mb-4 fw-bold shadow-sm mt-2" onclick="tambahBaris()">
+                        <i class="fas fa-plus"></i> Tambah Baris Barang
+                    </button>
+
+                    <button type="submit" class="btn btn-success btn-lg w-100 fw-bold shadow">
+                        <i class="fas fa-save me-2"></i> Simpan Semua Restok
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function tambahBaris() {
+        const container = document.getElementById('restok-container');
+        const firstRow = container.querySelector('.restok-row');
+        
+        // Gandakan baris pertama
+        const newRow = firstRow.cloneNode(true);
+        
+        // Kosongkan nilai di baris baru
+        newRow.querySelector('select').value = "";
+        const inputs = newRow.querySelectorAll('input');
+        inputs.forEach(input => input.value = "");
+
+        // Hilangkan label judul (agar hanya ada di baris atas saja)
+        const labels = newRow.querySelectorAll('label');
+        labels.forEach(label => label.style.display = 'none');
+
+        // Tambahkan tombol Hapus (X) merah di kolom terakhir
+        const deleteDiv = newRow.querySelector('.col-md-1');
+        deleteDiv.innerHTML = '<button type="button" class="btn btn-danger btn-sm w-100 fw-bold" onclick="hapusBaris(this)"><i class="fas fa-times"></i></button>';
+
+        container.appendChild(newRow);
+    }
+
+    function hapusBaris(btn) {
+        const row = btn.closest('.restok-row');
+        row.remove();
+    }
+</script>
+{% endblock %}
