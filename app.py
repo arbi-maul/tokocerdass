@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, extract
-from datetime import datetime, timedelta
+from datetime import datetime,date, timedelta
 import os
 import requests 
 import json
@@ -57,6 +57,8 @@ class Sale(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.now)
     total_penjualan = db.Column(db.Float, default=0)
     total_potongan = db.Column(db.Float, default=0)
+    # TAMBAHKAN BARIS INI (Sesuai dengan kolom fisik MySQL Anda)
+    total_modal = db.Column(db.Float, default=0, nullable=False)
     keuntungan = db.Column(db.Float, default=0)
     items = db.relationship('SaleItem', backref='sale', lazy=True)
 
@@ -65,8 +67,8 @@ class SaleItem(db.Model):
     sale_id = db.Column(db.Integer, db.ForeignKey('sale.id'), nullable=False)
     product_name = db.Column(db.String(100), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    price = db.Column(db.Float, nullable=False)
-    modal = db.Column(db.Float, default=0)       
+    price = db.Column('price_per_item', db.Float, nullable=False)
+    modal = db.Column('modal_per_item', db.Float, default=0)       
     sale_type = db.Column(db.String(20))         
     subtotal = db.Column(db.Float, default=0)
 
@@ -329,29 +331,49 @@ def proses_pembayaran():
     kembalian_nyata = max(0.0, uang_bayar - total_akhir) if hutang_baru == 0 else 0.0
     uang_masuk_nyata = total_akhir - hutang_baru
     
-    new_sale = Sale(total_penjualan=uang_masuk_nyata, total_potongan=potongan, keuntungan=0)
+    # --- 1. PROSES HITUNG TOTAL MODAL TERLEBIH DAHULU (MENCEGAH ERROR NOT NULL MYSQL) ---
+    total_modal_transaksi = 0
+    for item in cart:
+        prod = Product.query.get(item['id'])
+        if prod:
+            total_modal_transaksi += (prod.modal * int(item['quantity']))
+            
+    # Laba bersih langsung dikalkulasikan di sini
+    keuntungan_nyata = uang_masuk_nyata - total_modal_transaksi
+    
+    # --- 2. PEMBUATAN OBJEK SALE DENGAN KOLOM YANG SINKRON SESUAI DATABASE ---
+    new_sale = Sale(
+        total_penjualan=uang_masuk_nyata, 
+        total_potongan=potongan, 
+        total_modal=total_modal_transaksi,  # <-- Sesuai kolom database NOT NULL Anda
+        keuntungan=keuntungan_nyata         # <-- Laba bersih langsung tercatat otomatis
+    )
     db.session.add(new_sale)
     db.session.flush()
     
-    total_modal = 0
     list_barang_str = ""
     for item in cart:
         prod = Product.query.get(item['id'])
         if prod:
-            prod.stock -= item['quantity']
-            total_modal += (prod.modal * item['quantity'])
+            # Potong stok barang di toko secara otomatis
+            prod.stock -= int(item['quantity'])
+            
+            # Memasukkan data ke tabel sale_item
             db.session.add(SaleItem(
-                sale_id=new_sale.id, product_name=item['name'], 
-                quantity=item['quantity'], price=item['price'], 
-                modal=prod.modal, sale_type=item['price_type'], 
+                sale_id=new_sale.id, 
+                product_name=item['name'], 
+                quantity=item['quantity'], 
+                price=item['price'], 
+                modal=prod.modal, 
+                sale_type=item['price_type'], 
                 subtotal=item['subtotal']
             ))
             list_barang_str += f"▪️ {item['name']} ({item['quantity']}x) @ {item['price']:,.0f}\n"
 
-    new_sale.keuntungan = uang_masuk_nyata - total_modal
+    # Commit seluruh rangkaian operasi penyimpanan ke MySQL
     db.session.commit()
     
-    # KIRIM NOTIFIKASI TELEGRAM DENGAN NAMA PELANGGAN DAN KEMBALIAN NYATA
+    # --- 3. KIRIM NOTIFIKASI TELEGRAM DENGAN NAMA PELANGGAN DAN KEMBALIAN NYATA ---
     try: 
         pesan_telegram = (
             f"🛒 <b>TRANSAKSI BARU ({session.get('role', 'user').upper()})</b>\n"
@@ -367,7 +389,7 @@ def proses_pembayaran():
         )
         send_telegram_message(pesan_telegram)
     except Exception as e: 
-        print(e)
+        print(f"Telegram Error: {e}")
     
     # Reset keranjang dan session pelanggan setelah transaksi selesai
     session.pop('cart', None)
@@ -421,6 +443,96 @@ def get_sale_details(sale_id):
         })
     return jsonify({"items": output})
 
+@app.route('/spk_restok')
+def spk_restok():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+    
+    if session.get('role') != 'admin':
+        flash('Akses ditolak! Menu Pendukung Keputusan ini khusus untuk Admin.', 'danger')
+        return redirect(url_for('kasir'))
+
+    import math
+    try:
+        products = Product.query.all()
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        db.session.rollback()
+        products = Product.query.all()
+    
+    if not products or len(products) == 0:
+        return render_template('spk_restok.html', ranking_list=[])
+
+    # BOBOT KRITERIA (C1: Stok = 40%, C2: Margin = 30%, C3: Volume = 30%)
+    w = [0.40, 0.30, 0.30]
+    alternatives = []
+    
+    for p in products:
+        stok = float(p.stock) if p.stock is not None else 0.0
+        margin = float(p.retail_price - p.modal) if (p.retail_price and p.modal) else 0.0
+        if margin < 0: margin = 0.0
+        
+        # Hitung total terjual dari database secara aman
+        total_terjual = db.session.query(func.sum(SaleItem.quantity)).filter(
+            SaleItem.product_name == p.name
+        ).scalar() or 0
+        volume = float(total_terjual)
+        
+        alternatives.append({
+            'id': p.id,
+            'name': p.name,
+            'stok': p.stock,
+            'margin': margin,
+            'volume': volume,
+            'criteria': [stok, margin, volume]
+        })
+
+    # Pembagi normalisasi kuadrat
+    divider = [0.0, 0.0, 0.0]
+    for i in range(3):
+        sum_squares = sum(alt['criteria'][i] ** 2 for alt in alternatives)
+        divider[i] = math.sqrt(sum_squares) if sum_squares > 0 else 1.0
+
+    # Normalisasi berbobot
+    for alt in alternatives:
+        alt['weighted'] = [0.0, 0.0, 0.0]
+        for i in range(3):
+            alt['weighted'][i] = (alt['criteria'][i] / divider[i]) * w[i]
+
+    # Menentukan Solusi Ideal Positif (A+) & Negatif (A-)
+    # C1 (Stok) adalah COST kriteria (Semakin kecil stok, semakin diprioritaskan)
+    a_plus = [
+        min(alt['weighted'][0] for alt in alternatives),
+        max(alt['weighted'][1] for alt in alternatives),
+        max(alt['weighted'][2] for alt in alternatives)
+    ]
+    
+    a_minus = [
+        max(alt['weighted'][0] for alt in alternatives),
+        min(alt['weighted'][1] for alt in alternatives),
+        min(alt['weighted'][2] for alt in alternatives)
+    ]
+
+    # Hitung Jarak Euclidean & Nilai Preferensi V
+    ranking_list = []
+    for alt in alternatives:
+        d_plus = math.sqrt(sum((alt['weighted'][i] - a_plus[i]) ** 2 for i in range(3)))
+        d_minus = math.sqrt(sum((alt['weighted'][i] - a_minus[i]) ** 2 for i in range(3)))
+        
+        total_dist = d_plus + d_minus
+        score = (d_minus / total_dist) if total_dist > 0 else 0.0
+        
+        ranking_list.append({
+            'name': alt['name'],
+            'stok': alt['stok'],
+            'margin': alt['margin'],
+            'volume': int(alt['volume']),
+            'score': score
+        })
+
+    ranking_list.sort(key=lambda x: x['score'], reverse=True)
+    return render_template('spk_restok.html', ranking_list=ranking_list)
+
 @app.route('/kasbon')
 def kasbon():
     if not session.get('logged_in'):
@@ -472,54 +584,89 @@ def cek_admin():
 @app.route('/data_toko', methods=['GET', 'POST'])
 def data_toko():
     if not session.get('logged_in'): return redirect(url_for('login'))
-    if not cek_admin(): return redirect(url_for('kasir')) 
+    if not cek_admin(): return redirect(url_for('kasir'))
     
-    # 1. Fitur Simpan Biaya Operasional
-    if request.method == 'POST' and 'tambah_biaya' in request.form:
-        nama = request.form.get('nama_biaya')
-        kategori = request.form.get('kategori')
-        jumlah = float(request.form.get('jumlah'))
-        tanggal = request.form.get('tanggal')
-        db.session.add(OperationalCost(nama_biaya=nama, kategori=kategori, jumlah=jumlah, tanggal=datetime.strptime(tanggal, '%Y-%m-%d')))
-        db.session.commit()
-        return redirect(url_for('data_toko'))
-
-    # 2. FITUR BARU: Restok Barang Massal (Sekali Klik)
-    if request.method == 'POST' and 'restok_barang' in request.form:
-        product_ids = request.form.getlist('product_id[]')
-        qtys = request.form.getlist('qty_masuk[]')
-        biayas = request.form.getlist('total_biaya[]')
-
-        berhasil_count = 0
-        for i in range(len(product_ids)):
-            if not product_ids[i]: continue # Lewati jika baris kosong
+    if request.method == 'POST':
+        # 1. INPUT BIAYA OPERASIONAL BIASA
+        if request.form.get('tambah_biaya') == '1':
+            nama_biaya = request.form.get('nama_biaya')
+            kategori = request.form.get('kategori', 'Umum')
+            jumlah = float(request.form.get('jumlah', 0))
+            tanggal_str = request.form.get('tanggal')
             
-            prod_id = int(product_ids[i])
-            qty_masuk = int(qtys[i]) if qtys[i] else 0
-            total_biaya = float(biayas[i]) if biayas[i] else 0
-
-            if qty_masuk > 0:
-                prod = Product.query.get(prod_id)
-                if prod:
-                    prod.stock += qty_masuk
-                    # Otomatis menghitung ulang harga modal satuan
-                    if total_biaya > 0:
-                        prod.modal = total_biaya / qty_masuk
-                    berhasil_count += 1
+            if tanggal_str:
+                tanggal = datetime.strptime(tanggal_str, '%Y-%m-%d').date()
+            else:
+                tanggal = date.today()
+                
+            if nama_biaya and jumlah > 0:
+                biaya = OperationalCost(nama_biaya=nama_biaya, kategori=kategori, jumlah=jumlah, tanggal=tanggal)
+                db.session.add(biaya)
+                db.session.commit()
+                flash('✅ Biaya pengeluaran baru berhasil dicatat.', 'success')
+                return redirect(url_for('data_toko'))
         
+        # 2. INPUT ARRAYS/LIST RESTOK BARANG MASSAL (KULAKAN)
+        elif request.form.get('restok_barang') == '1':
+            product_ids = request.form.getlist('produk_id')
+            qtys_masuk = request.form.getlist('jumlah_masuk')
+            tot_biayas = request.form.getlist('total_biaya')
+            
+            barang_berhasil = 0
+            for i in range(len(product_ids)):
+                if not product_ids[i]: continue
+                
+                pid = int(product_ids[i])
+                qty_masuk = int(qtys_masuk[i] if qtys_masuk[i] else 0)
+                total_biaya = float(tot_biayas[i] if tot_biayas[i] else 0)
+                
+                if qty_masuk > 0 and total_biaya > 0:
+                    p = Product.query.get(pid)
+                    if p:
+                        # Update Stok & Hitung Moving Average Modal Baru
+                        stok_skrg = p.stock if p.stock else 0
+                        modal_skrg = p.modal if p.modal else 0
+                        
+                        total_stok_baru = stok_skrg + qty_masuk
+                        p.modal = ((stok_skrg * modal_skrg) + total_biaya) / total_stok_baru
+                        p.stock = total_stok_baru
+                        
+                        # Otomatis Masukkan ke Pengeluaran Kas Toko
+                        biaya_restok = OperationalCost(
+                            nama_biaya=f"Restok Massal: {p.name} (+{qty_masuk} Pcs)",
+                            kategori="Pembelian Stok",
+                            jumlah=total_biaya,
+                            tanggal=date.today()
+                        )
+                        db.session.add(biaya_restok)
+                        barang_berhasil += 1
+            
+            if barang_berhasil > 0:
+                db.session.commit()
+                flash(f'✅ Berhasil memproses restok massal untuk {barang_berhasil} jenis produk. Biaya masuk kas keluar!', 'success')
+            return redirect(url_for('data_toko'))
+            
+    biaya_ops = OperationalCost.query.order_by(OperationalCost.tanggal.desc()).all()
+    products = Product.query.order_by(Product.name).all() # Menyediakan variabel 'products' untuk dropdown template
+    return render_template('data_toko.html', biaya_ops=biaya_ops, products=products)
+
+@app.route('/hapus_biaya/<int:id>', methods=['GET', 'POST'])
+def hapus_biaya(id):
+    if not session.get('logged_in'): 
+        return redirect(url_for('login'))
+    if not cek_admin(): 
+        return redirect(url_for('kasir'))
+        
+    biaya = OperationalCost.query.get(id)
+    if biaya:
+        db.session.delete(biaya)
         db.session.commit()
-        if berhasil_count > 0:
-            flash(f'Berhasil! {berhasil_count} jenis barang telah direstok dan modal diperbarui.', 'success')
-        return redirect(url_for('data_toko'))
-
-    # Menampilkan data ke halaman HTML
-    biaya_ops = OperationalCost.query.order_by(OperationalCost.tanggal.desc()).limit(20).all()
-    products = Product.query.order_by(Product.name).all() # Diurutkan sesuai abjad
-    current_month = datetime.now().month
-    total_biaya = db.session.query(db.func.sum(OperationalCost.jumlah)).filter(db.extract('month', OperationalCost.tanggal) == current_month).scalar() or 0
-    
-    return render_template('data_toko.html', biaya_ops=biaya_ops, products=products, total_biaya=total_biaya)
-
+        flash('✅ Catatan riwayat pengeluaran berhasil dihapus.', 'success')
+    else:
+        flash('❌ Data pengeluaran tidak ditemukan.', 'danger')
+        
+    return redirect(url_for('data_toko'))
+        
 @app.route('/hapus_pelanggan/<int:id>', methods=['POST'])
 def hapus_pelanggan(id):
     if not cek_admin(): return redirect(url_for('kasir'))
@@ -545,14 +692,6 @@ def hapus_pelanggan(id):
             flash('Gagal menghapus pelanggan dari database.', 'danger')
             
     return redirect(url_for('pelanggan'))
-
-@app.route('/hapus_biaya/<int:id>')
-def hapus_biaya(id):
-    if not cek_admin(): return redirect(url_for('kasir'))
-    c = OperationalCost.query.get(id)
-    db.session.delete(c)
-    db.session.commit()
-    return redirect(url_for('data_toko'))
 
 @app.route('/analisis_produk')
 def analisis_produk():
@@ -731,25 +870,38 @@ def keuangan():
     if not cek_admin(): return redirect(url_for('kasir'))
     
     current_month = datetime.now().month
-    # 1. Hitung keuntungan kotor bulan ini
-    sales_month = Sale.query.filter(db.extract('month', Sale.timestamp) == current_month).all()
+    current_year = datetime.now().year
+    
+    # 1. Ambil data penjualan bulan ini (Tahun & Bulan terkunci)
+    sales_month = Sale.query.filter(
+        db.extract('month', Sale.timestamp) == current_month,
+        db.extract('year', Sale.timestamp) == current_year
+    ).all()
+    
     gross_profit_month = sum(s.keuntungan for s in sales_month)
     
-    # 2. Hitung pengeluaran operasional bulan ini
-    ops_month = db.session.query(func.sum(OperationalCost.jumlah)).filter(db.extract('month', OperationalCost.tanggal) == current_month).scalar() or 0
+    # 2. PERBAIKAN LOGIKA: Menggunakan func.coalesce untuk mencegah nilai None dari MySQL
+    ops_month = db.session.query(
+        func.coalesce(func.sum(OperationalCost.jumlah), 0) # <-- Jika hasil SUM adalah None, otomatis diubah menjadi 0
+    ).filter(
+        db.extract('month', OperationalCost.tanggal) == current_month,
+        db.extract('year', OperationalCost.tanggal) == current_year
+    ).scalar()
     
-    # 3. Hitung keuntungan bersih
+    # 3. Hitung keuntungan bersih (Sangat aman dari eror unsupported operand type)
     net_profit_month = gross_profit_month - ops_month
     
-    # 4. Ambil 15 transaksi terbaru
+    # 4. Ambil 15 transaksi terbaru untuk tabel riwayat bawah
     recent_sales = Sale.query.order_by(Sale.timestamp.desc()).limit(15).all()
     
-    # KUNCI PERBAIKAN: Nama variabel di kanan disesuaikan dengan yang dipanggil HTML
-    return render_template('keuangan.html', 
-                           profit_month=gross_profit_month, 
-                           ops_month=ops_month, 
-                           net_profit=net_profit_month,
-                           recent_sales=recent_sales)
+    # Kirim parameter ke template HTML secara presisi dan sinkron
+    return render_template(
+        'keuangan.html', 
+        profit_month=gross_profit_month, 
+        ops_month=ops_month, 
+        net_profit=net_profit_month,
+        recent_sales=recent_sales
+    )
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

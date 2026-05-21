@@ -23,6 +23,12 @@
                 border: none !important; 
             }
         }
+        
+        /* Merapikan tampilan bayangan dropdown */
+        .dropdown-menu {
+            border: none;
+            border-radius: 12px;
+        }
     </style>
 </head>
 <body>
@@ -43,7 +49,7 @@
                 <a class="nav-link" href="{{ url_for('kasir') }}"><i class="fas fa-cash-register me-1"></i> Kasir</a>
             </li>
 
-            <!-- MENU KASBON & ADUAN TOKO (DISEMBUNYIKAN SEPENUHNYA UNTUK ROLE ADMIN) -->
+            <!-- MENU KASBON & ADUAN TOKO (HANYA UNTUK KARYAWAN, DISEMBUNYIKAN SEPENUHNYA UNTUK ROLE ADMIN) -->
             {% if session.get('role') != 'admin' %}
             <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('kasbon') }}"><i class="fas fa-file-invoice-dollar me-1"></i> Kasbon</a>
@@ -55,9 +61,25 @@
 
             <!-- LINK KHUSUS ADMIN -->
             {% if session.get('role') == 'admin' %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('produk') }}"><i class="fas fa-boxes me-1"></i> Produk</a>
+                <!-- MENU DROPDOWN PRODUK & SPK STOK (SANGAT HEMAT TEMPAT) -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle text-warning fw-bold" href="#" id="navbarDropdownProduk" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-boxes me-1"></i> Produk & Stok
+                    </a>
+                    <ul class="dropdown-menu shadow border-0 mt-2" aria-labelledby="navbarDropdownProduk">
+                        <li>
+                            <a class="dropdown-item py-2 text-dark" href="{{ url_for('produk') }}">
+                                <i class="fas fa-box me-2 text-primary"></i> Kelola Produk
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item py-2 fw-bold text-success" href="{{ url_for('spk_restok') }}">
+                                <i class="fas fa-lightbulb me-2 text-warning"></i> Rekomendasi Restok
+                            </a>
+                        </li>
+                    </ul>
                 </li>
+
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('pelanggan') }}"><i class="fas fa-users me-1"></i> Master Pelanggan</a>
                 </li>
@@ -74,7 +96,7 @@
             {% if session.get('logged_in') %}
                 <li class="nav-item">
                     <span class="nav-link text-white fw-bold">
-                        <i class="fas fa-user-circle me-1"></i> selamat bekerja!!
+                        <i class="fas fa-user-circle me-1"></i> selamat bekerja!! ({{ session.get('role', 'user').upper() }})
                     </span>
                 </li>
                 <li class="nav-item ms-2">
@@ -83,7 +105,9 @@
                     </a>
                 </li>
             {% else %}
-                <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('login') }}"><i class="fas fa-sign-in-alt me-1"></i> Login Admin</a>
+                </li>
             {% endif %}
           </ul>
 
@@ -108,5 +132,5 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  </body>
+</body>
 </html>

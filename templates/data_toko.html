@@ -2,132 +2,223 @@
 {% block title %}Data Toko{% endblock %}
 {% block content %}
 
-<div class="row">
-    <div class="col-md-5">
-        <div class="card shadow mb-4">
-            <div class="card-header bg-danger text-white">
-                <h5 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>Catat Biaya Operasional</h5>
+<!-- IMPORT STYLESHEET SELECT2 UNTUK PENCARIAN PRODUK INTERAKTIF -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+
+<!-- NOTIFIKASI SUKSES / ERROR -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm mb-4" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <div class="card-body">
-                <form method="post">
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="row">
+    <!-- Kolom Kiri: Catat Biaya Operasional & Riwayat -->
+    <div class="col-md-5 mb-4">
+        <div class="card shadow border-0 mb-4">
+            <div class="card-header bg-danger text-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="fas fa-file-invoice-dollar me-2"></i>Catat Biaya Operasional</h5>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" action="{{ url_for('data_toko') }}">
                     <input type="hidden" name="tambah_biaya" value="1">
-                    <div class="mb-2">
-                        <label>Nama Biaya</label>
-                        <input type="text" class="form-control" name="nama_biaya" placeholder="Contoh: Listrik, Gaji Karyawan" required>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-secondary">Nama Biaya</label>
+                        <input type="text" class="form-control" name="nama_biaya" placeholder="Contoh: Tagihan Listrik, Gaji Bulanan..." required>
                     </div>
-                    <div class="row mb-2">
-                        <div class="col">
-                            <label>Kategori</label>
+                    
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-secondary">Kategori</label>
                             <select class="form-select" name="kategori">
-                                <option value="Tetap">Biaya Tetap (Sewa/Gaji)</option>
-                                <option value="Variabel">Biaya Variabel (Listrik/Makan)</option>
+                                <option value="Operasional">Biaya Operasional</option>
+                                <option value="Gaji">Gaji Karyawan</option>
+                                <option value="Sewa">Sewa Tempat</option>
                                 <option value="Lainnya">Lainnya</option>
                             </select>
                         </div>
-                        <div class="col">
-                            <label>Jumlah (Rp)</label>
-                            <input type="number" class="form-control" name="jumlah" required>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-secondary">Jumlah (Rp)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">Rp</span>
+                                <input type="number" class="form-control" name="jumlah" placeholder="Contoh: 2000000" min="1" required>
+                            </div>
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label>Tanggal</label>
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-secondary">Tanggal</label>
                         <input type="date" class="form-control" name="tanggal" value="{{ now().strftime('%Y-%m-%d') }}" required>
                     </div>
-                    <button type="submit" class="btn btn-danger w-100 fw-bold">Simpan Pengeluaran</button>
+                    
+                    <button type="submit" class="btn btn-danger w-100 fw-bold py-2 shadow-sm">
+                        <i class="fas fa-save me-2"></i>Simpan Pengeluaran
+                    </button>
                 </form>
 
-                <hr>
-                <h6 class="fw-bold">Riwayat Pengeluaran (Terbaru)</h6>
-                <ul class="list-group list-group-flush" style="max-height: 250px; overflow-y: auto;">
+                <hr class="my-4">
+                
+                <h5 class="fw-bold mb-3 text-secondary"><i class="fas fa-history me-2"></i>Riwayat Pengeluaran (Terbaru)</h5>
+                <div class="list-group list-group-flush border rounded-3 p-2 bg-white shadow-sm" style="max-height: 350px; overflow-y: auto;">
                     {% for biaya in biaya_ops %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-3 border-bottom">
                         <div>
-                            <strong>{{ biaya.nama_biaya }}</strong> <span class="badge bg-secondary">{{ biaya.kategori }}</span><br>
-                            <small class="text-muted">{{ biaya.tanggal }}</small>
+                            <span class="fw-bold text-dark d-block">{{ biaya.nama_biaya }}</span>
+                            <span class="badge bg-secondary mb-1">{{ biaya.kategori }}</span>
+                            <small class="text-muted d-block" style="font-size: 0.75rem;"><i class="far fa-calendar-alt me-1"></i>{{ biaya.tanggal.strftime('%d-%m-%Y') }}</small>
                         </div>
                         <div class="text-end">
-                            <span class="text-danger fw-bold">- {{ biaya.jumlah|rupiah }}</span><br>
-                            <a href="{{ url_for('hapus_biaya', id=biaya.id) }}" class="text-danger small text-decoration-none" onclick="return confirm('Yakin ingin menghapus biaya ini?')"><i class="fas fa-trash"></i> Hapus</a>
+                            <span class="text-danger fw-bold d-block">{{ biaya.jumlah | rupiah }}</span>
+                            <a href="{{ url_for('hapus_biaya', id=biaya.id) }}" class="btn btn-sm text-danger p-0 border-0 bg-transparent" onclick="return confirm('Yakin ingin menghapus catatan pengeluaran ini?');" style="font-size: 0.8rem;">
+                                <i class="fas fa-trash-alt me-1"></i>Hapus
+                            </a>
                         </div>
-                    </li>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-receipt fa-2x mb-2 opacity-50"></i>
+                        <p class="mb-0 small">Belum ada pengeluaran dicatat.</p>
+                    </div>
                     {% endfor %}
-                </ul>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="col-md-7">
-        <div class="card shadow mb-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i class="fas fa-boxes me-2"></i>Restok Barang Massal (Kulakan)</h5>
+    <!-- Kolom Kanan: Restok Barang Massal (Kulakan) -->
+    <div class="col-md-7 mb-4">
+        <div class="card shadow border-0">
+            <div class="card-header bg-success text-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="fas fa-boxes me-2"></i>Restok Barang Massal (Kulakan)</h5>
             </div>
-            <div class="card-body">
-                <div class="alert alert-success pb-0 mb-3">
-                    <p><small>Klik <strong>+ Tambah Baris</strong> untuk menginput nota supplier. Stok akan bertambah & modal baru otomatis dihitung.</small></p>
+            <div class="card-body p-4">
+                <div class="alert alert-success border-0 shadow-sm d-flex align-items-center mb-4">
+                    <i class="fas fa-info-circle fa-lg me-3"></i>
+                    <p class="mb-0 small">
+                        Pilih produk menggunakan fitur pencarian cepat, isi kuantitas, dan total biaya modal pembelian barang. Stok produk Anda akan bertambah secara otomatis, dan total biaya pengeluaran tersebut akan dicatatkan langsung pada laporan pengeluaran toko.
+                    </p>
                 </div>
                 
                 <form method="post" action="{{ url_for('data_toko') }}">
                     <input type="hidden" name="restok_barang" value="1">
                     
                     <div id="restok-container">
-                        <div class="row mb-2 restok-row align-items-center">
-                            <div class="col-md-5 mb-1 pe-1">
-                                <label class="form-label mb-0 small fw-bold">Nama Barang</label>
-                                <select class="form-select form-select-sm" name="product_id[]" required>
-                                    <option value="">-- Pilih Barang --</option>
+                        <div class="row g-2 mb-3 restok-row align-items-end border-bottom pb-3">
+                            <div class="col-md-5">
+                                <label class="form-label mb-1 small fw-bold text-secondary">Cari Nama Produk</label>
+                                <!-- MENAMBAHKAN KELAS KHUSUS select-produk-search UNTUK SELECT2 -->
+                                <select class="form-select select-produk-search" name="product_id[]" required>
+                                    <option value="" disabled selected>-- Cari Produk --</option>
                                     {% for p in products %}
                                         <option value="{{ p.id }}">{{ p.name }} (Stok: {{ p.stock }})</option>
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-md-2 mb-1 px-1">
-                                <label class="form-label mb-0 small fw-bold">Qty (Pcs)</label>
-                                <input type="number" class="form-control form-control-sm" name="qty_masuk[]" min="1" required>
+                            <div class="col-md-3">
+                                <label class="form-label mb-1 small fw-bold text-secondary">Kuantitas (Pcs)</label>
+                                <input type="number" class="form-control" name="qty_masuk[]" placeholder="Misal: 200" min="1" required>
                             </div>
-                            <div class="col-md-4 mb-1 px-1">
-                                <label class="form-label mb-0 small fw-bold">Total Uang (Rp)</label>
-                                <input type="number" class="form-control form-control-sm" name="total_biaya[]" min="0" required>
-                            </div>
-                            <div class="col-md-1 mb-1 ps-1 text-center" style="padding-top: 18px;">
+                            <div class="col-md-4">
+                                <label class="form-label mb-1 small fw-bold text-secondary">Total Biaya Kulakan (Rp)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">Rp</span>
+                                    <input type="number" class="form-control" name="total_biaya[]" placeholder="Misal: 2000000" min="1" required>
                                 </div>
+                            </div>
                         </div>
                     </div>
 
-                    <button type="button" class="btn btn-outline-primary btn-sm mb-4 fw-bold shadow-sm mt-2" onclick="tambahBaris()">
-                        <i class="fas fa-plus"></i> Tambah Baris Barang
-                    </button>
-
-                    <button type="submit" class="btn btn-success btn-lg w-100 fw-bold shadow">
-                        <i class="fas fa-save me-2"></i> Simpan Semua Restok
-                    </button>
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold shadow-sm" onclick="tambahBaris()">
+                            <i class="fas fa-plus me-1"></i>Tambah Baris Produk
+                        </button>
+                        
+                        <button type="submit" class="btn btn-success btn-lg px-4 fw-bold shadow-sm">
+                            <i class="fas fa-save me-2"></i>Simpan & Proses Restok
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
 
+<!-- IMPORT JQUERY DAN JAVASCRIPT SELECT2 SEBELUM OPERASI SCRIPTS -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
 <script>
+    // Inisialisasi Select2 pada elemen tertentu
+    function initSelect2(element) {
+        $(element).select2({
+            theme: 'bootstrap-5',
+            placeholder: '-- Cari Produk --',
+            allowClear: true,
+            width: '100%'
+        });
+    }
+
+    $(document).ready(function() {
+        // Terapkan Select2 pada baris pertama saat halaman dimuat
+        $('.select-produk-search').each(function() {
+            initSelect2(this);
+        });
+    });
+
     function tambahBaris() {
         const container = document.getElementById('restok-container');
         const firstRow = container.querySelector('.restok-row');
         
-        // Gandakan baris pertama
+        // Sebelum cloning, hancurkan sementara Select2 pada baris pertama agar cloning DOM bersih
+        const firstSelect = $(firstRow).find('.select-produk-search');
+        if (firstSelect.data('select2')) {
+            firstSelect.select2('destroy');
+        }
+        
+        // Gandakan baris pertama yang sudah bersih
         const newRow = firstRow.cloneNode(true);
         
-        // Kosongkan nilai di baris baru
-        newRow.querySelector('select').value = "";
+        // Inisialisasi ulang Select2 pada baris pertama
+        initSelect2(firstSelect);
+        
+        // Kosongkan nilai dropdown dan input di baris baru yang di-cloning
+        const newSelect = $(newRow).find('.select-produk-search');
+        newSelect.val("").trigger('change');
+        
+        // Hapus container Select2 lama hasil duplikasi dari HTML baru
+        $(newRow).find('.select2-container').remove();
+        
         const inputs = newRow.querySelectorAll('input');
         inputs.forEach(input => input.value = "");
 
-        // Hilangkan label judul (agar hanya ada di baris atas saja)
+        // Hilangkan label judul pada baris baru agar tidak menumpuk
         const labels = newRow.querySelectorAll('label');
         labels.forEach(label => label.style.display = 'none');
 
-        // Tambahkan tombol Hapus (X) merah di kolom terakhir
-        const deleteDiv = newRow.querySelector('.col-md-1');
-        deleteDiv.innerHTML = '<button type="button" class="btn btn-danger btn-sm w-100 fw-bold" onclick="hapusBaris(this)"><i class="fas fa-times"></i></button>';
+        // Sesuaikan lebar kolom untuk tombol hapus
+        const lastCol = newRow.querySelector('.col-md-4');
+        if (lastCol) {
+            lastCol.classList.remove('col-md-4');
+            lastCol.classList.add('col-md-3');
+        }
 
+        // Buat tombol Hapus (X) merah untuk baris baru
+        const deleteCol = document.createElement('div');
+        deleteCol.className = 'col-md-1 text-center';
+        deleteCol.innerHTML = '<button type="button" class="btn btn-danger w-100 fw-bold" onclick="hapusBaris(this)"><i class="fas fa-times"></i></button>';
+        
+        newRow.appendChild(deleteCol);
         container.appendChild(newRow);
+        
+        // Inisialisasi Select2 baru khusus untuk baris yang baru saja ditambahkan
+        initSelect2(newSelect);
     }
 
     function hapusBaris(btn) {
