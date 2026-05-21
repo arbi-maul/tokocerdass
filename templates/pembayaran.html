@@ -52,7 +52,6 @@
             </div>
 
             <div class="card-body">
-                <!-- PANEL PELANGGAN AKTIF -->
                 <div class="alert alert-info py-2 d-flex justify-content-between align-items-center mb-3">
                     <span>Transaksi untuk Pelanggan: <strong>{{ pelanggan_aktif.nama if pelanggan_aktif else 'Umum (Tanpa Akun)' }}</strong></span>
                     <span class="badge bg-primary">Aktif</span>
@@ -94,11 +93,10 @@
                 <hr>
 
                 <form action="{{ url_for('proses_pembayaran') }}" method="post">
-                    <!-- Lempar ID Pelanggan Aktif ke Server -->
                     <input type="hidden" name="pelanggan_id" value="{{ selected_pelanggan_id or '' }}">
 
                     <div class="mb-3">
-                        <label for="potongan" class="form-label">
+                        <label for="potongan" class="form-label fw-bold text-secondary">
                             Potongan Harga (Rp)
                         </label>
                         <input
@@ -112,7 +110,12 @@
                         >
                     </div>
 
-                    <div class="text-end mb-4">
+                    <!-- BARIS BARU: DETAIL BIAYA TAMBAHAN / PAJAK NON-TUNAI -->
+                    <div class="text-end mb-2 text-muted animate__animated animate__fadeIn" id="row-biaya-tambahan" style="display: none;">
+                        <span class="fs-6">Biaya Admin/Pajak (<span id="label-biaya">0%</span>): <strong class="text-dark" id="nilai-biaya">Rp 0</strong></span>
+                    </div>
+
+                    <div class="text-end mb-3">
                         <h3>
                             Total Akhir:
                             <span class="text-danger" id="total-akhir">
@@ -122,12 +125,22 @@
                     </div>
 
                     <div class="mb-3">
-                        <label for="uang_bayar" class="form-label fs-5">
+                        <label for="metode_pembayaran" class="form-label fw-bold text-secondary">Metode Pembayaran</label>
+                        <select class="form-select form-select-lg border-primary fw-bold" name="metode_pembayaran" id="metode_pembayaran" required>
+                            <option value="Tunai">💵 Uang Tunai (Cash - Tanpa Pajak)</option>
+                            <option value="Transfer Bank">🏦 Transfer Bank (+ Rp 2.500 Admin)</option>
+                            <option value="QRIS">📱 QRIS Digital (+ 0.7% MDR)</option>
+                            <option value="ShopeePay">🧡 ShopeePay (+ 1.0% Layanan)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="uang_bayar" class="form-label fs-5 fw-bold text-secondary">
                             Jumlah Uang Pembeli (Rp)
                         </label>
                         <input
                             type="number"
-                            class="form-control form-control-lg"
+                            class="form-control form-control-lg text-success fw-bold"
                             id="uang_bayar"
                             name="uang_bayar"
                             min="0"
@@ -142,7 +155,6 @@
                         </div>
                     </div>
 
-                    <!-- KASBON HANYA DIALOKASIKAN JIKA PEMBELI ADALAH "PELANGGAN UMUM" DAN UANGNYA KURANG -->
                     {% if not selected_pelanggan_id %}
                     <div class="mb-4 mt-3 border border-danger rounded p-3 bg-light-danger" id="kasbon-container" style="display: none;">
                         <label class="form-label text-danger fw-bold"><i class="fas fa-exclamation-triangle me-1"></i> Pelanggan Kasbon (Wajib Dipilih karena uang kurang)</label>
@@ -157,8 +169,8 @@
                     {% endif %}
 
                     <div class="d-grid mt-3 gap-2">
-                        <button type="submit" class="btn btn-success btn-lg">
-                            Proses Pembayaran & Cetak Struk
+                        <button type="submit" class="btn btn-success btn-lg fw-bold py-3 shadow-sm">
+                            <i class="fas fa-print me-2"></i>Proses Pembayaran & Cetak Struk
                         </button>
                         <a href="{{ url_for('kasir') }}" class="btn btn-outline-secondary">
                             Kembali ke Kasir
@@ -175,6 +187,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const paymentContainer = document.getElementById('payment-container');
     const subtotal = parseFloat(paymentContainer.dataset.subtotal);
     const potonganInput = document.getElementById('potongan');
+    const metodeSelect = document.getElementById('metode_pembayaran');
     const uangBayarInput = document.getElementById('uang_bayar');
     const totalAkhirDisplay = document.getElementById('total-akhir');
     const infoKembalianDisplay = document.getElementById('info-kembalian');
@@ -183,24 +196,72 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function hitungSemua() {
         let potongan = parseFloat(potonganInput.value) || 0;
-        let uangBayar = parseFloat(uangBayarInput.value) || 0;
+        let metode = metodeSelect.value;
 
         if (potongan > subtotal) {
             potongan = subtotal;
             potonganInput.value = subtotal;
         }
 
-        const totalAkhir = Math.max(0, subtotal - potongan);
-        const kembalian = uangBayar - totalAkhir;
+        const totalSebelumBiaya = Math.max(0, subtotal - potongan);
+        let biayaTambahan = 0;
+        let labelBiayaText = "0%";
 
+        // LOGIKA PENAMBAHAN BIAYA ADMIN/PAJAK LAYANAN SEcara Dinamis
+        if (metode === 'Transfer Bank') {
+            biayaTambahan = 2500; // Biaya Admin Flat antar-bank Rp 2.500
+            labelBiayaText = "Flat Admin";
+        } else if (metode === 'QRIS') {
+            biayaTambahan = Math.round(totalSebelumBiaya * 0.007); // 0.7% MDR Standar BI
+            labelBiayaText = "MDR 0.7%";
+        } else if (metode === 'ShopeePay') {
+            biayaTambahan = Math.round(totalSebelumBiaya * 0.01); // 1.0% Layanan Merchant
+            labelBiayaText = "Layanan 1%";
+        }
+
+        const totalAkhir = totalSebelumBiaya + biayaTambahan;
+
+        // TAMPILKAN / SEMBUNYIKAN DETAIL BIAYA TAMBAHAN
+        const rowBiaya = document.getElementById('row-biaya-tambahan');
+        const labelBiaya = document.getElementById('label-biaya');
+        const nilaiBiaya = document.getElementById('nilai-biaya');
+
+        if (biayaTambahan > 0) {
+            rowBiaya.style.display = 'block';
+            labelBiaya.innerText = labelBiayaText;
+            nilaiBiaya.innerText = `Rp ${biayaTambahan.toLocaleString('id-ID')}`;
+        } else {
+            rowBiaya.style.display = 'none';
+        }
+
+        // UPDATE DISPLAY TOTAL AKHIR YANG BARU (Sudah termasuk biaya admin)
         totalAkhirDisplay.innerHTML = `Rp ${totalAkhir.toLocaleString('id-ID')}`;
+
+        // OTOMATISASI JIKA METODE BUKAN TUNAI (CASHLESS)
+        if (metode !== 'Tunai') {
+            uangBayarInput.value = totalAkhir;
+            uangBayarInput.readOnly = true;
+            
+            infoKembalianDisplay.innerHTML = `Pembayaran Non-Tunai Berhasil Terkonfirmasi (Lunas termasuk Biaya Layanan)`;
+            infoKembalianDisplay.style.color = 'blue';
+            
+            if (kasbonContainer) {
+                kasbonContainer.style.display = 'none';
+                if (selectPelangganKasbon) selectPelangganKasbon.required = false;
+            }
+            return;
+        }
+
+        // KEMBALIKAN KONTROL JIKA METODE ADALAH TUNAI
+        uangBayarInput.readOnly = false;
+        let uangBayar = parseFloat(uangBayarInput.value) || 0;
+        const kembalian = uangBayar - totalAkhir;
 
         if (uangBayar > 0) {
             if (kembalian >= 0) {
                 infoKembalianDisplay.innerHTML = `Kembalian: Rp ${kembalian.toLocaleString('id-ID')}`;
                 infoKembalianDisplay.style.color = 'green';
                 
-                // Sembunyikan panel kasbon karena uang pas/lebih
                 if (kasbonContainer) {
                     kasbonContainer.style.display = 'none';
                     if (selectPelangganKasbon) selectPelangganKasbon.required = false;
@@ -209,7 +270,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 infoKembalianDisplay.innerHTML = `Uang kurang: Rp ${Math.abs(kembalian).toLocaleString('id-ID')}`;
                 infoKembalianDisplay.style.color = 'red';
                 
-                // Tampilkan panel kasbon karena uang kurang
                 if (kasbonContainer) {
                     kasbonContainer.style.display = 'block';
                     if (selectPelangganKasbon) selectPelangganKasbon.required = true;
@@ -226,7 +286,19 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     potonganInput.addEventListener('input', hitungSemua);
+    metodeSelect.addEventListener('change', function() {
+        if (this.value !== 'Tunai') {
+            hitungSemua();
+        } else {
+            uangBayarInput.value = '';
+            uangBayarInput.readOnly = false;
+            hitungSemua();
+        }
+    });
     uangBayarInput.addEventListener('input', hitungSemua);
+    
+    // Inisialisasi hitung saat pertama kali dimuat
+    hitungSemua();
 });
 </script>
 {% endblock %}

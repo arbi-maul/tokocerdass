@@ -57,9 +57,9 @@ class Sale(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.now)
     total_penjualan = db.Column(db.Float, default=0)
     total_potongan = db.Column(db.Float, default=0)
-    # TAMBAHKAN BARIS INI (Sesuai dengan kolom fisik MySQL Anda)
     total_modal = db.Column(db.Float, default=0, nullable=False)
     keuntungan = db.Column(db.Float, default=0)
+    metode_pembayaran = db.Column(db.String(30), default='Tunai', nullable=False)
     items = db.relationship('SaleItem', backref='sale', lazy=True)
 
 class SaleItem(db.Model):
@@ -305,7 +305,19 @@ def proses_pembayaran():
     potongan = float(request.form.get('potongan', 0) or 0)
     uang_bayar = float(request.form.get('uang_bayar', 0) or 0)
     
-    total_akhir = total_belanja - potongan
+    # 1. TANGKAP METODE PEMBAYARAN DAN HITUNG PAJAK / ADMIN DI BACKEND
+    metode = request.form.get('metode_pembayaran', 'Tunai')
+    total_sebelum_biaya = total_belanja - potongan
+    biaya_tambahan = 0
+    
+    if metode == 'Transfer Bank':
+        biaya_tambahan = 2500
+    elif metode == 'QRIS':
+        biaya_tambahan = round(total_sebelum_biaya * 0.007)
+    elif metode == 'ShopeePay':
+        biaya_tambahan = round(total_sebelum_biaya * 0.01)
+        
+    total_akhir = total_sebelum_biaya + biaya_tambahan
     kembalian = uang_bayar - total_akhir
     hutang_baru = 0
     
@@ -331,72 +343,81 @@ def proses_pembayaran():
     kembalian_nyata = max(0.0, uang_bayar - total_akhir) if hutang_baru == 0 else 0.0
     uang_masuk_nyata = total_akhir - hutang_baru
     
-    # --- 1. PROSES HITUNG TOTAL MODAL TERLEBIH DAHULU (MENCEGAH ERROR NOT NULL MYSQL) ---
-    total_modal_transaksi = 0
-    for item in cart:
-        prod = Product.query.get(item['id'])
-        if prod:
-            total_modal_transaksi += (prod.modal * int(item['quantity']))
-            
-    # Laba bersih langsung dikalkulasikan di sini
-    keuntungan_nyata = uang_masuk_nyata - total_modal_transaksi
-    
-    # --- 2. PEMBUATAN OBJEK SALE DENGAN KOLOM YANG SINKRON SESUAI DATABASE ---
-    new_sale = Sale(
-        total_penjualan=uang_masuk_nyata, 
-        total_potongan=potongan, 
-        total_modal=total_modal_transaksi,  # <-- Sesuai kolom database NOT NULL Anda
-        keuntungan=keuntungan_nyata         # <-- Laba bersih langsung tercatat otomatis
-    )
+    # Cek ketersediaan kolom di database
+    has_payment_col = hasattr(Sale, 'metode_pembayaran')
+    if has_payment_col:
+        new_sale = Sale(
+            total_penjualan=uang_masuk_nyata, 
+            total_potongan=potongan, 
+            keuntungan=0,
+            metode_pembayaran=metode
+        )
+    else:
+        new_sale = Sale(
+            total_penjualan=uang_masuk_nyata, 
+            total_potongan=potongan, 
+            keuntungan=0
+        )
+        
     db.session.add(new_sale)
     db.session.flush()
     
+    total_modal = 0
     list_barang_str = ""
     for item in cart:
         prod = Product.query.get(item['id'])
         if prod:
-            # Potong stok barang di toko secara otomatis
-            prod.stock -= int(item['quantity'])
-            
-            # Memasukkan data ke tabel sale_item
+            prod.stock -= item['quantity']
+            total_modal += (prod.modal * item['quantity'])
             db.session.add(SaleItem(
-                sale_id=new_sale.id, 
-                product_name=item['name'], 
-                quantity=item['quantity'], 
-                price=item['price'], 
-                modal=prod.modal, 
-                sale_type=item['price_type'], 
+                sale_id=new_sale.id, product_name=item['name'], 
+                quantity=item['quantity'], price=item['price'], 
+                modal=prod.modal, sale_type=item['price_type'], 
                 subtotal=item['subtotal']
             ))
             list_barang_str += f"▪️ {item['name']} ({item['quantity']}x) @ {item['price']:,.0f}\n"
 
-    # Commit seluruh rangkaian operasi penyimpanan ke MySQL
+    new_sale.keuntungan = uang_masuk_nyata - total_modal
     db.session.commit()
     
-    # --- 3. KIRIM NOTIFIKASI TELEGRAM DENGAN NAMA PELANGGAN DAN KEMBALIAN NYATA ---
+    # 2. KIRIM NOTIFIKASI TELEGRAM DENGAN DATA METODE & RINCIAN PAJAK YANG SINKRON
     try: 
         pesan_telegram = (
             f"🛒 <b>TRANSAKSI BARU ({session.get('role', 'user').upper()})</b>\n"
             f"👤 Pelanggan: <b>{pelanggan_nama}</b>\n"
+            f"💳 Metode: <b>{metode}</b>\n"
             f"📅 {datetime.now().strftime('%d/%m %H:%M')}\n"
             f"----------------\n"
             f"{list_barang_str}"
             f"----------------\n"
+            f"💰 Subtotal: Rp {total_sebelum_biaya:,.0f}\n"
+        )
+        if biaya_tambahan > 0:
+            pesan_telegram += f"➕ Pajak/Admin: Rp {biaya_tambahan:,.0f}\n"
+        pesan_telegram += (
             f"💰 Total Akhir: Rp {total_akhir:,.0f}\n"
-            f"💳 Tunai Masuk: Rp {uang_masuk_nyata:,.0f}\n"
+            f"💳 Uang Masuk: Rp {uang_masuk_nyata:,.0f}\n"
             f"🔄 Kembalian: Rp {kembalian_nyata:,.0f}\n"
             f"📒 Hutang Kasbon: Rp {hutang_baru:,.0f}"
         )
         send_telegram_message(pesan_telegram)
     except Exception as e: 
-        print(f"Telegram Error: {e}")
+        print(e)
     
-    # Reset keranjang dan session pelanggan setelah transaksi selesai
     session.pop('cart', None)
     session.pop('selected_pelanggan_id', None)
     session.pop('current_pelanggan_name', None)
     
-    return render_template('struk.html', cart=cart, total=total_belanja, potongan=potongan, total_akhir=total_akhir, uang_bayar=uang_bayar, kembalian=kembalian_nyata, pelanggan_nama=pelanggan_nama)
+    # 3. OPER METODE PEMBAYARAN KE TEMPLATE STRUK.HTML AGAR INVOICE SESUAI
+    return render_template('struk.html', 
+                           cart=cart, 
+                           total=total_belanja, 
+                           potongan=potongan, 
+                           total_akhir=total_akhir, 
+                           uang_bayar=uang_bayar, 
+                           kembalian=kembalian_nyata, 
+                           pelanggan_nama=pelanggan_nama,
+                           metode_pembayaran=metode)
 
 @app.route('/bayar_hutang', methods=['POST'])
 def bayar_hutang():

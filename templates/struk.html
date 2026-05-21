@@ -44,10 +44,52 @@
                             <th class="text-end border-0">- Rp{{ "%.0f"|format(potongan) }}</th>
                         </tr>
                         {% endif %}
+
+                        <!-- LOGIKA PERHITUNGAN BIAYA ADMIN & PAJAK NON-TUNAI DINAMIS DI STRUK -->
+                        {% set total_sebelum_biaya = total - potongan %}
+                        {% set biaya_tambahan = 0 %}
+                        {% set label_biaya = "" %}
+
+                        {% if metode_pembayaran == 'Transfer Bank' %}
+                            {% set biaya_tambahan = 2500 %}
+                            {% set label_biaya = "Biaya Admin (Transfer)" %}
+                        {% elif metode_pembayaran == 'QRIS' %}
+                            {% set biaya_tambahan = (total_sebelum_biaya * 0.007) | round | int %}
+                            {% set label_biaya = "Pajak QRIS (0.7%)" %}
+                        {% elif metode_pembayaran == 'ShopeePay' %}
+                            {% set biaya_tambahan = (total_sebelum_biaya * 0.01) | round | int %}
+                            {% set label_biaya = "Layanan ShopeePay (1%)" %}
+                        {% endif %}
+
+                        {% if biaya_tambahan > 0 %}
+                        <tr>
+                            <th colspan="3" class="text-end border-0">{{ label_biaya }}</th>
+                            <th class="text-end border-0">+ Rp{{ "%.0f"|format(biaya_tambahan) }}</th>
+                        </tr>
+                        {% endif %}
+
                         <tr>
                             <th colspan="3" class="text-end border-0 fw-bold">TOTAL AKHIR</th>
-                            <th class="text-end border-0 fw-bold">Rp{{ "%.0f"|format(total_akhir) }}</th>
+                            {% set total_akhir_nyata = total_sebelum_biaya + biaya_tambahan %}
+                            <th class="text-end border-0 fw-bold">Rp{{ "%.0f"|format(total_akhir_nyata) }}</th>
                         </tr>
+                        
+                        <!-- METODE PEMBAYARAN YANG DIGUNAKAN -->
+                        <tr>
+                            <th colspan="3" class="text-end border-0">METODE BYR</th>
+                            <th class="text-end border-0 text-primary fw-bold">
+                                {% if metode_pembayaran == 'Transfer Bank' %}
+                                     Transfer Bank
+                                {% elif metode_pembayaran == 'QRIS' %}
+                                     QRIS
+                                {% elif metode_pembayaran == 'ShopeePay' %}
+                                     ShopeePay
+                                {% else %}
+                                     Tunai
+                                {% endif %}
+                            </th>
+                        </tr>
+
                         <tr>
                             <th colspan="3" class="text-end border-0">BAYAR</th>
                             <th class="text-end border-0">Rp{{ "%.0f"|format(uang_bayar) }}</th>
